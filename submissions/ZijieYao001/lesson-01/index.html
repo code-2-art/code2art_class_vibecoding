@@ -1,0 +1,81 @@
+<!doctype html>
+<html lang="zh-CN"><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>鼠标流光 · 粒子收集</title>
+<style>*{box-sizing:border-box}body{margin:0;background:#080f1c;color:#dce9f6;font:14px system-ui,sans-serif}canvas{display:block;width:100vw;height:100vh;touch-action:none}header{position:fixed;top:36px;left:36px;pointer-events:none}small{color:#7ca9c4;letter-spacing:3px}h1{font-size:32px;font-weight:500;margin:12px 0}p{color:#8eacc4}aside{position:fixed;right:28px;top:36px;width:230px;padding:22px;background:#102034ee;border:1px solid #284059;border-radius:12px}label{display:block;margin:18px 0 8px}input{width:100%;accent-color:#71d5df}output{float:right;color:#8edfe5}button{background:#203d51;color:#def9ff;border:1px solid #476375;border-radius:6px;padding:9px;width:100%;margin-top:14px;cursor:pointer}button:hover{background:#2a4f6b}.row{display:flex;gap:10px}.row button{margin-top:14px}#stats{margin-top:16px}#stats b{color:#9cf2ef;font-size:20px;font-weight:500}#timer.low{color:#ffb08a}#fps{display:block;color:#8eacc4;margin-top:12px}#overlay{position:fixed;inset:0;background:#080f1ce6;display:flex;flex-direction:column;align-items:center;justify-content:center;text-align:center;z-index:10}#overlay h2{font-size:40px;font-weight:500;margin:0 0 10px}#overlay p{max-width:420px;margin:6px 0;line-height:1.7}#overlay button{width:auto;padding:12px 46px;margin-top:26px;font-size:16px}#final{font-size:56px;color:#9cf2ef;font-weight:300;margin:10px 0}#error{position:fixed;bottom:20px;left:20px;color:#ffc2c2}@media(max-width:650px){header{top:20px;left:20px}h1{font-size:24px}aside{top:auto;bottom:16px;right:16px;width:190px;padding:14px}label{margin-top:10px}}</style>
+<canvas id="canvas" aria-label="移动鼠标使圆环收集粒子"></canvas>
+<header><small>CODE2ART / LESSON 01</small><h1>鼠标流光 · 粒子收集</h1><p>移动圆环，在时间结束前收集尽量多的光粒。</p></header>
+<aside><strong>交互参数</strong>
+<label for="radius">圆环半径 <output id="rv">26</output></label><input id="radius" type="range" min="10" max="60" value="26">
+<label for="speed">跟随速度 <output id="sv">9</output></label><input id="speed" type="range" min="3" max="20" value="9">
+<div class="row"><button id="mute">声音：开</button><button id="clear">清空轨迹</button></div>
+<div id="stats">得分 <b id="score">0</b>&nbsp;&nbsp;剩余 <b id="timer">60</b> 秒</div>
+<span id="fps">FPS —</span></aside>
+<div id="overlay"><h2>鼠标流光 · 粒子收集</h2><p>移动鼠标，控制发光圆环触碰画面中的光粒即可收集，每次收集得分并发出提示音。倒计时 60 秒，看看你能收集多少。</p><p>点击下方按钮开始，开始后移动鼠标即开始游戏。</p><button id="start">开始游戏</button></div>
+<p id="error" role="alert"></p><noscript>请启用 JavaScript 以运行本作品。</noscript>
+<script>
+(()=>{'use strict';
+const canvas=document.getElementById('canvas'),ctx=canvas.getContext('2d'),error=document.getElementById('error');
+if(!ctx){error.textContent='此浏览器不支持 Canvas 2D，请更换浏览器。';return;}
+if(!window.requestAnimationFrame){error.textContent='此浏览器不支持动画帧，请更换浏览器。';return;}
+const radius=document.getElementById('radius'),speed=document.getElementById('speed'),
+scoreEl=document.getElementById('score'),timerEl=document.getElementById('timer'),
+overlay=document.getElementById('overlay'),startBtn=document.getElementById('start'),
+finalEl=document.createElement('p'),muteBtn=document.getElementById('mute');
+finalEl.id='final';
+overlay.insertBefore(finalEl,startBtn);
+let w,h,x,y,tx,ty,points=[],particles=[],bursts=[],last=0,count=0,fpsStart=0,
+playing=false,score=0,timeLeft=60,roundEnd=0,muted=false;
+/* ---------- WebAudio 合成音效：无外部素材 ---------- */
+let ac=null;
+function tone(freq,dur,vol,type){if(muted)return;try{ac=ac||new (window.AudioContext||window.webkitAudioContext)();const o=ac.createOscillator(),g=ac.createGain();o.type=type||'sine';o.frequency.value=freq;g.gain.setValueAtTime(vol,ac.currentTime);g.gain.exponentialRampToValueAtTime(.0001,ac.currentTime+dur);o.connect(g).connect(ac.destination);o.start();o.stop(ac.currentTime+dur);}catch(e){}}
+const collectSound=()=>{tone(660,.12,.18,'sine');tone(990,.18,.10,'sine');};
+const endSound=()=>{tone(392,.3,.16,'triangle');setTimeout(()=>tone(523,.4,.16,'triangle'),180);};
+const startSound=()=>{tone(523,.15,.14,'triangle');setTimeout(()=>tone(784,.2,.14,'triangle'),140);};
+muteBtn.onclick=()=>{muted=!muted;muteBtn.textContent=muted?'声音：关':'声音：开';};
+/* ---------- 画布与状态 ---------- */
+function resize(){w=innerWidth;h=innerHeight;const d=Math.min(devicePixelRatio||1,2);canvas.width=w*d;canvas.height=h*d;ctx.setTransform(d,0,0,d,0,0);x=tx=w*.45;y=ty=h*.55;points=[];}
+resize();addEventListener('resize',resize);
+canvas.addEventListener('pointermove',e=>{tx=e.clientX;ty=e.clientY;});
+canvas.addEventListener('pointerdown',e=>{tx=e.clientX;ty=e.clientY;canvas.setPointerCapture(e.pointerId);});
+radius.oninput=()=>document.getElementById('rv').textContent=radius.value;
+speed.oninput=()=>document.getElementById('sv').textContent=speed.value;
+document.getElementById('clear').onclick=()=>{points=[];};
+function spawnParticle(){const m=70;particles.push({x:m+Math.random()*(w-2*m),y:m+Math.random()*(h-2*m),t:performance.now(),life:4200+Math.random()*1800,r:4+Math.random()*5});}
+function burst(px,py){for(let i=0;i<14;i++){const a=Math.PI*2*i/14,v=60+Math.random()*120;bursts.push({x:px,y:py,vx:Math.cos(a)*v,vy:Math.sin(a)*v,t:performance.now()});}}
+function startGame(){score=0;timeLeft=60;particles=[];bursts=[];points=[];playing=true;roundEnd=0;scoreEl.textContent='0';timerEl.textContent='60';timerEl.classList.remove('low');overlay.style.display='none';startSound();for(let i=0;i<5;i++)spawnParticle();}
+startBtn.onclick=startGame;
+function endGame(){playing=false;roundEnd=performance.now();endSound();finalEl.textContent=score;overlay.style.display='flex';startBtn.textContent='再来一局';}
+/* ---------- 主循环 ---------- */
+function frame(t){const dt=last?Math.min((t-last)/1000,.05):.016;last=t;
+if(playing){
+const prevRound=roundEnd;
+timeLeft-=dt;timerEl.textContent=Math.max(0,Math.ceil(timeLeft));
+timerEl.classList.toggle('low',timeLeft<=10);
+if(timeLeft<=0)endGame();
+/* 圆环平滑跟随 */
+const a=1-Math.exp(-Number(speed.value)*dt);x+=(tx-x)*a;y+=(ty-y)*a;
+points.push({x,y,t});points=points.filter(p=>t-p.t<900);
+/* 粒子生成与收集 */
+if(Math.random()<dt*2.4&&particles.length<14)spawnParticle();
+particles=particles.filter(p=>t-p.t<p.life);
+const r=Number(radius.value),rr=(r+14)*(r+14);
+for(let i=particles.length-1;i>=0;i--){const p=particles[i],dx=p.x-x,dy=p.y-y;
+if(dx*dx+dy*dy<rr){particles.splice(i,1);score++;scoreEl.textContent=score;burst(p.x,p.y);collectSound();}}
+bursts=bursts.filter(b=>t-b.t<500);
+}else{
+/* 未开始/结束时圆环缓慢漂移展示 */
+const a=1-Math.exp(-3*dt);x+=(w*.5+Math.sin(t*.0006)*w*.18-x)*a;y+=(h*.5+Math.cos(t*.0004)*h*.14-y)*a;
+}
+/* 绘制 */
+ctx.clearRect(0,0,w,h);
+for(let i=0;i<points.length;i++){const p=points[i],al=(1-(t-p.t)/900)*.4;ctx.beginPath();ctx.arc(p.x,p.y,Number(radius.value)*(0.25+al),0,Math.PI*2);ctx.strokeStyle=`rgba(104,191,239,${al})`;ctx.lineWidth=1;ctx.stroke();}
+/* 粒子 */
+for(const p of particles){const age=(t-p.t)/p.life,al=.9-age*.75,tw=1+Math.sin(t*.006+p.x)*.25;ctx.beginPath();ctx.arc(p.x,p.y,p.r*tw,0,Math.PI*2);ctx.fillStyle=`rgba(255,224,130,${al})`;ctx.shadowBlur=16;ctx.shadowColor='#ffd966';ctx.fill();ctx.shadowBlur=0;}
+/* 收集爆闪 */
+for(const b of bursts){const age=(t-b.t)/500;ctx.beginPath();ctx.arc(b.x+b.vx*age*.05,b.y+b.vy*age*.05,2.4*(1-age),0,Math.PI*2);ctx.fillStyle=`rgba(156,242,239,${1-age})`;ctx.fill();}
+/* 圆环 */
+ctx.shadowBlur=22;ctx.shadowColor='#72e1ed';ctx.strokeStyle='#9cf2ef';ctx.lineWidth=2;ctx.beginPath();ctx.arc(x,y,Number(radius.value),0,Math.PI*2);ctx.stroke();ctx.shadowBlur=0;
+count++;if(t-fpsStart>700){document.getElementById('fps').textContent='FPS '+Math.round(count*1000/(t-fpsStart));count=0;fpsStart=t;}
+requestAnimationFrame(frame);}
+requestAnimationFrame(frame);
+})();
+</script></html>
